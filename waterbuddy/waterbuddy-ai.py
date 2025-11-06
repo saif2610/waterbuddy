@@ -1,11 +1,17 @@
 import streamlit as st
 import json
 import os
-from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
+from datetime import datetime, timedelta, timezone
 import pandas as pd
-from plyer import notification  # For desktop notifications
+import tempfile
 import time
+import plotly.graph_objects as go  # ✅ Replaced Matplotlib with Plotly
+
+# Optional: desktop notifications (local only)
+try:
+    from plyer import notification
+except Exception:
+    notification = None
 
 USERS_FILE = "users.json"
 LOGS_FILE = "logs.json"
@@ -23,7 +29,6 @@ html, body, [data-testid="stAppViewContainer"] > section:first-child {
   animation: waterflow 12s ease infinite;
   backdrop-filter: blur(20px);
 }
-
 div.stButton > button {
   border-radius: 14px;
   padding: 14px 28px;
@@ -39,24 +44,20 @@ div.stButton > button:hover {
   filter: brightness(115%);
   transform: scale(1.03);
 }
-
 @keyframes waterflow {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
-
 [data-testid="stSidebar"] {
   background: linear-gradient(180deg, #0072ff 0%, #00c6ff 100%);
   color: white;
   animation: waterflow 15s ease infinite;
 }
-
 h1, h2, h3, h4 {
   color: #004aad !important;
   text-shadow: 0px 0px 8px rgba(0, 162, 255, 0.5);
 }
-
 hr {
   border: 1px solid rgba(0, 102, 255, 0.3);
 }
@@ -64,15 +65,30 @@ hr {
 """, unsafe_allow_html=True)
 
 # ---------------- Utility Functions ---------------- #
+def atomic_save(filename, data):
+    """Write JSON atomically to avoid truncation/race (best-effort)."""
+    s = json.dumps(data, indent=4)
+    dirn = os.path.dirname(os.path.abspath(filename)) or "."
+    fd, tmp_path = tempfile.mkstemp(dir=dirn, prefix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(s)
+        os.replace(tmp_path, filename)
+    except Exception:
+        with open(filename, "w") as f:
+            f.write(s)
+
 def load_data(filename):
     if os.path.exists(filename):
         with open(filename, "r") as f:
-            return json.load(f)
+            try:
+                return json.load(f)
+            except Exception:
+                return {}
     return {}
 
 def save_data(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4)
+    atomic_save(filename, data)
 
 def hash_password(password):
     import hashlib
@@ -108,7 +124,7 @@ def sign_up(name, email, password, age, health_conditions):
         "age": age,
         "health_conditions": health_conditions,
         "daily_goal": goal,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
     save_data(USERS_FILE, users)
     return True
@@ -129,14 +145,14 @@ def get_user_profile(email):
 
 def log_water(email, amount_ml):
     logs = load_data(LOGS_FILE)
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     logs.setdefault(email, {}).setdefault(today, 0)
-    logs[email][today] += amount_ml
+    logs[email][today] += int(amount_ml)
     save_data(LOGS_FILE, logs)
 
 def get_today_log(email):
     logs = load_data(LOGS_FILE)
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return logs.get(email, {}).get(today, 0)
 
 def get_logs(email):
@@ -162,53 +178,86 @@ def show_emoji(progress_percent):
     else:
         return "😠"
 
+# ---------------- Plotly Progress Chart ---------------- #
 def plot_progress_chart(email):
     logs = get_logs(email)
-    if not logs:
-        st.info("No hydration data yet.")
-        return
-    df = pd.DataFrame([{"date": d, "totalMl": v} for d, v in logs.items()])
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date").tail(7)
-    plt.figure(figsize=(9, 4))
-    plt.bar(df["date"].dt.strftime("%a %b %d"), df["totalMl"], color="#0072ff", edgecolor="black", alpha=0.8)
-    goal = get_user_profile(email).get("daily_goal", 2000)
-    plt.axhline(y=goal, color="#00c6ff", linestyle="--", linewidth=2, label="Goal")
-    plt.xticks(rotation=45, fontsize=11)
-    plt.ylabel("Water Intake (ml)", fontsize=12)
-    plt.title("Water Intake - Last 7 Days", fontsize=15, weight="bold", color="#004aad")
-    plt.legend()
-    plt.tight_layout()
-    st.pyplot(plt)
+    today_utc = datetime.now(timezone.utc).date()
+    dates = [today_utc - timedelta(days=i) for i in range(6, -1, -1)]
+    date_strs = [d.strftime("%Y-%m-%d") for d in dates]
+    values = [logs.get(ds, 0) for ds in date_strs]
 
+    df = pd.DataFrame({
+        "Date": [d.strftime("%a %b %d") for d in dates],
+        "Water Intake (ml)": values
+    })
+
+    goal = get_user_profile(email).get("daily_goal", 2000)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=df["Date"],
+        y=df["Water Intake (ml)"],
+        marker_color="#0072ff",
+        hoverinfo="x+y",
+        name="Water Intake"
+    ))
+
+    # Add goal line
+    fig.add_hline(
+        y=goal,
+        line_dash="dash",
+        line_color="#00c6ff",
+        annotation_text=f"Goal ({goal} ml)",
+        annotation_position="top left"
+    )
+
+    fig.update_layout(
+        title="Water Intake - Last 7 Days",
+        xaxis_title="Date",
+        yaxis_title="Water Intake (ml)",
+        template="plotly_white",
+        bargap=0.3,
+        height=400,
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------- Progress Circle ---------------- #
 def progress_circle(progress):
     col1, col2, col3 = st.columns([1,6,1])
     with col2:
+        progress_int = max(0, min(100, int(progress)))
         circle = f"""
         <svg viewBox="0 0 36 36" width="140" height="140" role="img">
           <path fill="none" stroke="#e5e7eb" stroke-width="4" d="M18 2.0845
             a 15.9155 15.9155 0 0 1 0 31.831
             a 15.9155 15.9155 0 0 1 0 -31.831"/>
           <path fill="none" stroke="#00aaff" stroke-width="4"
-            stroke-dasharray="{progress}, 100" d="M18 2.0845
+            stroke-dasharray="{progress_int}, 100" d="M18 2.0845
             a 15.9155 15.9155 0 0 1 0 31.831
             a 15.9155 15.9155 0 0 1 0 -31.831"/>
-          <text x="18" y="20.35" fill="#004aad" font-size="8" font-weight="bold" text-anchor="middle">{progress}%</text>
+          <text x="18" y="20.35" fill="#004aad" font-size="8" font-weight="bold" text-anchor="middle">{progress_int}%</text>
         </svg>
         """
         st.markdown(circle, unsafe_allow_html=True)
 
 # ---------------- Reminder Function ---------------- #
 def send_reminder():
-    """Send a desktop + in-app reminder."""
-    st.toast("💧 Time to drink water!", icon="💧")
+    """Send an in-app + optional desktop notification."""
     try:
-        notification.notify(
-            title="Water Buddy Reminder 💧",
-            message="Time to take a sip of water and stay hydrated!",
-            timeout=5
-        )
-    except:
+        st.toast("💧 Time to drink water!", icon="💧")
+    except Exception:
+        st.info("💧 Time to drink water!")
+
+    try:
+        if notification:
+            notification.notify(
+                title="Water Buddy Reminder 💧",
+                message="Time to take a sip of water and stay hydrated!",
+                timeout=5
+            )
+    except Exception:
         pass
 
 # ---------------- MAIN ---------------- #
@@ -251,6 +300,11 @@ def main():
     # --- Dashboard --- #
     email = st.session_state.user
     profile = get_user_profile(email)
+    if not profile:
+        st.error("User profile not found. Please sign in again.")
+        st.session_state.user = None
+        return
+
     st.sidebar.markdown(f"### Hello, <span style='color:white;'>{profile['name']}</span> 👋", unsafe_allow_html=True)
     st.sidebar.markdown(f"**Age:** {profile['age']}")
     conds = ", ".join([k for k,v in profile["health_conditions"].items() if v]) or "None"
@@ -286,7 +340,7 @@ def main():
             log_water(email, int(custom_amount))
             st.rerun()
 
-    # --- Chart --- #
+    # --- Plotly Chart --- #
     st.markdown("---")
     st.markdown("<h3 style='color:#004aad;'>Track Your Progress 📊</h3>", unsafe_allow_html=True)
     plot_progress_chart(email)
@@ -299,16 +353,19 @@ def main():
         award_badge(email, "Hydration Hero Badge 🏅")
         st.balloons()
         st.success("You earned the Hydration Hero Badge 🏅 — keep up the streak!")
-        badges.append("Hydration Hero Badge 🏅")
+        badges = get_badges(email)
 
     if badges:
-        cols = st.columns(len(badges))
-        for col, badge in zip(cols, badges):
-            col.markdown(f"<div style='background:#00aaff; color:white; border-radius:12px; padding:10px 15px; text-align:center; font-weight:bold;'>{badge}</div>", unsafe_allow_html=True)
+        max_per_row = 4
+        for i in range(0, len(badges), max_per_row):
+            row = badges[i:i+max_per_row]
+            cols = st.columns(len(row))
+            for col, badge in zip(cols, row):
+                col.markdown(f"<div style='background:#00aaff; color:white; border-radius:12px; padding:10px 15px; text-align:center; font-weight:bold;'>{badge}</div>", unsafe_allow_html=True)
     else:
         st.write("No badges yet. Keep going!")
 
-    # --- Reminders (Working) --- #
+    # --- Reminders --- #
     st.markdown("---")
     st.markdown("<h3 style='color:#004aad;'>Reminders ⏰</h3>", unsafe_allow_html=True)
     enable = st.checkbox("Enable Reminders", value=False)
@@ -316,13 +373,13 @@ def main():
 
     if enable:
         if "next_reminder" not in st.session_state:
-            st.session_state.next_reminder = datetime.now() + timedelta(minutes=interval)
+            st.session_state.next_reminder = datetime.now(timezone.utc) + timedelta(minutes=interval)
 
-        if datetime.now() >= st.session_state.next_reminder:
+        if datetime.now(timezone.utc) >= st.session_state.next_reminder:
             send_reminder()
-            st.session_state.next_reminder = datetime.now() + timedelta(minutes=interval)
+            st.session_state.next_reminder = datetime.now(timezone.utc) + timedelta(minutes=interval)
 
-        st.info(f"💧 Reminder active! You'll be reminded every {interval} minutes.")
+        st.info(f"💧 Reminder active! You'll be reminded every {interval} minutes (while page open).")
     else:
         st.warning("Reminders are off. Enable to get hydration alerts.")
 
