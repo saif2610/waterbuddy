@@ -4,9 +4,15 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-from plyer import notification
 import os
+import threading
 import time
+
+# Optional desktop notifications
+try:
+    from plyer import notification
+except Exception:
+    notification = None
 
 # ---------- CONFIG ----------
 st.set_page_config(page_title="💧 Water Buddy", page_icon="💧", layout="centered")
@@ -14,7 +20,7 @@ st.set_page_config(page_title="💧 Water Buddy", page_icon="💧", layout="cent
 USERS_FILE = "users.json"
 LOGS_FILE = "logs.json"
 
-# ---------- UTIL FUNCTIONS ----------
+# ---------- UTILITIES ----------
 def load_data(file):
     if not os.path.exists(file):
         return {}
@@ -29,25 +35,31 @@ def save_data(file, data):
         json.dump(data, f, indent=4)
 
 def notify_user(title, message):
-    try:
-        notification.notify(title=title, message=message, timeout=3)
-    except Exception:
-        pass
+    if notification:
+        try:
+            notification.notify(title=title, message=message, timeout=4)
+        except Exception:
+            pass
 
-# ---------- INIT DATA ----------
+# ---------- INITIALIZE ----------
 users = load_data(USERS_FILE)
 logs = load_data(LOGS_FILE)
-
-# ---------- PAGE SELECTION ----------
 if "page" not in st.session_state:
     st.session_state.page = "intro"
+if "last_reminder" not in st.session_state:
+    st.session_state.last_reminder = time.time()
 
 # ---------- INTRO PAGE ----------
 if st.session_state.page == "intro":
-    st.title("💧 Welcome to **Water Buddy**")
-    st.subheader("Your Personal Hydration Coach 💙")
+    st.markdown(
+        """
+        <h1 style="color:#0072ff;text-align:center;">💧 Water Buddy</h1>
+        <h3 style="text-align:center;">Your Smart Hydration Partner 🌿</h3>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.write("Before we begin, please share a few quick details:")
+    st.write("Let's personalize your hydration journey 💙")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -61,18 +73,19 @@ if st.session_state.page == "intro":
             ["None", "Diabetes", "Kidney issues", "High BP", "Heart disease", "Other"],
         )
 
-    st.divider()
-
+    st.markdown("---")
     st.markdown("### 🩵 Health & Hydration Tips:")
     tips = [
         "Drink a glass of water first thing in the morning 🌞",
-        "Keep a reusable bottle with you everywhere 💧",
-        "Take small sips regularly instead of gulping 💦",
+        "Keep a reusable bottle nearby 💧",
+        "Take small sips regularly 💦",
         "Avoid dehydration by tracking your intake ⏱️",
-        "Add lemon or mint to your water for taste 🍋",
+        "Add lemon or mint for natural flavor 🍋",
     ]
-    st.write("• " + "\n• ".join(tips))
+    for tip in tips:
+        st.write(f"- {tip}")
 
+    st.markdown("---")
     if st.button("✨ Start Tracking"):
         users["profile"] = {
             "age": age,
@@ -86,87 +99,111 @@ if st.session_state.page == "intro":
 
 # ---------- TRACKER PAGE ----------
 elif st.session_state.page == "tracker":
-    st.title("💧 Water Intake Tracker")
-    st.caption("Stay hydrated, stay healthy 🌿")
+    st.markdown(
+        """
+        <h1 style="color:#0072ff;text-align:center;">💧 Water Intake Tracker</h1>
+        <h4 style="text-align:center;color:#555;">Stay hydrated, stay healthy 🌿</h4>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # Profile summary
     if "profile" in users:
         prof = users["profile"]
         st.markdown(
-            f"**👤 Age:** {prof['age']} &nbsp;&nbsp; "
-            f"**💼 Profession:** {prof['profession']} &nbsp;&nbsp; "
-            f"**⚕️ Diseases:** {', '.join(prof['diseases']) if prof['diseases'] else 'None'}"
+            f"<p style='text-align:center;font-size:16px;'>👤 <b>Age:</b> {prof['age']} &nbsp;&nbsp; 💼 <b>Profession:</b> {prof['profession']} &nbsp;&nbsp; ⚕️ <b>Health:</b> {', '.join(prof['diseases']) if prof['diseases'] else 'None'}</p>",
+            unsafe_allow_html=True,
         )
-        st.divider()
 
-    # Input for water intake
+    st.markdown("---")
+
+    # ---------- DAILY TRACK ----------
+    daily_goal = 2500  # ml/day
     today = datetime.now().strftime("%Y-%m-%d")
-    water_goal = 2500  # ml
+
     if today not in logs:
         logs[today] = {"intake": 0, "timestamps": []}
+        save_data(LOGS_FILE, logs)
 
     intake = logs[today]["intake"]
-    percent = round((intake / water_goal) * 100, 1) if water_goal > 0 else 0
+    percent = round((intake / daily_goal) * 100, 1)
 
+    # Display metrics
     st.metric(
         label="💧 Total Intake Today",
         value=f"{intake} ml",
-        delta=f"{water_goal - intake} ml left",
+        delta=f"{max(0, daily_goal - intake)} ml left",
     )
+    st.progress(min(intake / daily_goal, 1.0))
 
-    st.progress(min(intake / water_goal, 1.0))
-
+    # Add water
     add_ml = st.number_input("Add water (ml):", min_value=50, max_value=1000, step=50)
     if st.button("✅ Log Water"):
         logs[today]["intake"] += add_ml
         logs[today]["timestamps"].append(datetime.now().strftime("%H:%M:%S"))
         save_data(LOGS_FILE, logs)
         notify_user("Water Buddy", f"You drank {add_ml} ml of water 💦")
-        st.balloons()  # 🎈 Balloons fly after each log
-        st.success("Water added successfully!")
-        time.sleep(0.8)
+        st.balloons()
+        st.success("Water added successfully! Keep going 💧")
+        time.sleep(0.6)
         st.rerun()
 
-    st.divider()
+    # ---------- REMINDER SYSTEM ----------
+    st.markdown("---")
+    st.markdown("### ⏰ Hydration Reminder")
 
-    # Chart
-    st.markdown("### 📈 Your Weekly Hydration Progress")
-    df = pd.DataFrame({
-        "Date": list(logs.keys()),
-        "Intake": [logs[day]["intake"] for day in logs]
+    interval = st.slider("Set reminder interval (minutes)", 15, 120, 60)
+    current_time = time.time()
+
+    if current_time - st.session_state.last_reminder >= interval * 60:
+        notify_user("💧 Time to drink water!", "Keep yourself hydrated 💙")
+        st.session_state.last_reminder = current_time
+        st.info("🔔 Reminder sent!")
+
+    st.caption("Reminders appear as desktop notifications every few minutes.")
+
+    # ---------- WEEKLY HYDRATION PROGRESS ----------
+    st.markdown("---")
+    st.markdown("### 📈 Weekly Hydration Progress")
+
+    today_date = datetime.now().date()
+    last7 = [(today_date - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
+    intake_vals = [logs.get(d, {}).get("intake", 0) for d in last7]
+
+    df_plot = pd.DataFrame({
+        "Date": [datetime.strptime(d, "%Y-%m-%d").strftime("%a %d %b") for d in last7],
+        "Intake": intake_vals
     })
-    df["Goal"] = water_goal
-    df = df.tail(7)
 
-    fig, ax = plt.subplots()
-    ax.bar(df["Date"], df["Intake"], color="#4FC3F7", label="Water Intake")
-    ax.axhline(y=water_goal, color="red", linestyle="--", label="Goal")
+    fig, ax = plt.subplots(figsize=(7, 3.2))
+    ax.bar(df_plot["Date"], df_plot["Intake"], color="#4FC3F7", edgecolor="#0277BD")
+    ax.axhline(y=daily_goal, color="#FF5252", linestyle="--", linewidth=1.3, label=f"Goal ({daily_goal} ml)")
     ax.set_xlabel("Date")
     ax.set_ylabel("Water (ml)")
-    ax.set_title("Last 7 Days Hydration")
+    ax.set_title("Hydration Over Time")
     ax.legend()
     plt.xticks(rotation=30)
+    plt.tight_layout()
     st.pyplot(fig)
 
-    st.divider()
-
-    # 💧 Percentage & Daily Summary
+    # ---------- SUMMARY ----------
+    st.markdown("---")
     st.markdown("### 📊 Today's Hydration Summary")
     st.write(f"**You’ve completed {percent}% of your daily goal!**")
 
     if percent < 50:
-        st.warning("🟥 You’re below 50%. Keep drinking water throughout the day! 💧")
+        st.warning("🟥 Below 50% — You need more water! Stay hydrated 💧")
     elif percent < 90:
-        st.info("🟨 You’re doing well! Just a bit more to reach your target 💪")
+        st.info("🟨 Doing great! A bit more to reach your target 💪")
     elif percent < 100:
-        st.success("🟩 Great work! You’re almost there 💦")
+        st.success("🟩 Great work! Almost there 💦")
     else:
         st.balloons()
-        st.success("🎉 Excellent! You’ve completed your hydration goal for today! 🏆")
+        st.success("🎉 Excellent! You’ve achieved your daily hydration goal 🏆")
 
-    st.divider()
+    st.markdown("---")
+    st.info("💡 Tip: Set reminders to sip every hour for optimal hydration.")
 
-    # Reminder & motivational message
-    st.info("💡 Tip: Set hourly reminders on your phone or smartwatch to sip water.")
-
-    st.button("🔁 Go Back", on_click=lambda: st.session_state.update(page="intro"))
+    if st.button("🔁 Go Back"):
+        st.session_state.page = "intro"
+        st.rerun()
