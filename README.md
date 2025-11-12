@@ -44,6 +44,56 @@ The app includes:
 - **Data Storage:** JSON-based local storage  
 - **Language:** Python 3.9+  
 
+# 💧 Water Buddy – Smart Hydration Tracker  
+
+### 🩵 Stay Hydrated. Stay Healthy. Stay Motivated.
+
+---
+
+## 🌟 Overview
+
+**Water Buddy** is a personalized and visually stunning **Streamlit app** that helps users build healthy hydration habits.  
+It sets your daily water goal based on your **name**, **age**, **profession**, and **health conditions** — reminding you to drink water regularly.  
+
+The app features **animated balloons 🎈**, **motivational quotes 💬**, **weekly progress charts 📊**, **reminders ⏰**, and **badges 🏅** — all wrapped in a clean, professional UI.  
+
+---
+
+## 🧠 Features
+
+| Feature | Description |
+|----------|--------------|
+| 👤 **User Profiles** | Sign up with your name, age, profession, and health conditions. |
+| 💧 **Smart Hydration Goals** | Automatically calculates your daily goal based on your details. |
+| 🚰 **Water Logging** | Add 100ml, 200ml, or custom amounts of water. |
+| 🎈 **Flying Balloons** | Celebrate each intake with beautiful animations! |
+| 💬 **Motivational Quotes** | Encouraging hydration quotes after each log. |
+| 📊 **Weekly Progress Chart** | Track your last 7 days of water intake using Matplotlib. |
+| 🏅 **Achievement Badges** | Earn badges like “Hydration Hero 🏅” when you reach goals. |
+| ⏰ **Smart Reminders** | Custom time reminders to drink water. |
+| 🌈 **Modern UI** | Beautiful gradient backgrounds, shadows, and animations. |
+
+---
+
+## 🛠️ Tech Stack
+
+- **Frontend:** Streamlit  
+- **Backend / Logic:** Python  
+- **Charts:** Matplotlib  
+- **Notifications:** Plyer  
+- **Storage:** JSON (local files)  
+- **Styling:** Custom CSS + Streamlit layout  
+
+---
+
+## 📦 Installation Guide
+
+### 1️⃣ Clone or Download Project
+```bash
+git clone https://github.com/yourusername/water-buddy.git
+cd water-buddy
+
+
 ---
 
 
