@@ -86,14 +86,6 @@ The app features **animated balloons 🎈**, **motivational quotes 💬**, **wee
 
 ---
 
-## 📦 Installation Guide
 
-### 1️⃣ Clone or Download Project
-```bash
-git clone https://github.com/yourusername/water-buddy.git
-cd water-buddy
-
-
----
 
 
