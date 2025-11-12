@@ -46,9 +46,4 @@ The app includes:
 
 ---
 
-## 📦 Installation
 
-### 1️⃣ Clone or Download Repository
-```bash
-git clone https://github.com/yourusername/water-buddy.git
-cd water-buddy
