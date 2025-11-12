@@ -6,19 +6,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tempfile
 import random
+import time
 
-# Optional desktop notifications
 try:
     from plyer import notification
 except Exception:
     notification = None
 
-# ---------------- FILES ----------------
 USERS_FILE = "users.json"
 LOGS_FILE = "logs.json"
 BADGES_FILE = "badges.json"
 
-st.set_page_config(page_title="💧 Water Buddy - Hydration Tracker", page_icon="💦", layout="centered")
+st.set_page_config(page_title="💧 Water Buddy", page_icon="💦", layout="centered")
 
 # ---------------- BEAUTIFUL CSS ----------------
 st.markdown("""
@@ -66,13 +65,9 @@ def atomic_save(filename, data):
     s = json.dumps(data, indent=4)
     dirn = os.path.dirname(os.path.abspath(filename)) or "."
     fd, tmp_path = tempfile.mkstemp(dir=dirn, prefix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(s)
-        os.replace(tmp_path, filename)
-    except Exception:
-        with open(filename, "w") as f:
-            f.write(s)
+    with os.fdopen(fd, "w") as f:
+        f.write(s)
+    os.replace(tmp_path, filename)
 
 def load_data(filename):
     if os.path.exists(filename):
@@ -164,7 +159,7 @@ def send_reminder():
     st.toast("💧 Time to drink water!", icon="💧")
     if notification:
         try:
-            notification.notify(title="💧 Water Buddy Reminder", message="Time to hydrate yourself!", timeout=5)
+            notification.notify(title="💧 Water Buddy Reminder", message="Time to hydrate!", timeout=5)
         except Exception:
             pass
 
@@ -263,7 +258,6 @@ def main():
 
     st.markdown(f"### 💧 Today's Hydration: **{today_total} ml / {daily_goal} ml** ({progress}%)")
     st.progress(min(progress, 100))
-
     st.info(get_quote())
 
     c1, c2, c3 = st.columns(3)
@@ -271,26 +265,25 @@ def main():
         if st.button("100 ml 💧"):
             log_water(email, 100)
             st.balloons()
-            st.success(get_quote())
+            time.sleep(1.5)
             st.rerun()
     with c2:
         if st.button("200 ml 💦"):
             log_water(email, 200)
             st.balloons()
-            st.success(get_quote())
+            time.sleep(1.5)
             st.rerun()
     with c3:
         custom = st.number_input("Custom (ml)", 10, 5000, 250)
         if st.button("Add Custom 🚰"):
             log_water(email, custom)
             st.balloons()
-            st.success(get_quote())
+            time.sleep(1.5)
             st.rerun()
 
     st.markdown("---")
     plot_progress_chart(email)
 
-    # Badges
     if progress >= 100:
         award_badge(email, "🏅 Hydration Hero")
         st.success("🎉 You earned the Hydration Hero Badge!")
@@ -300,7 +293,6 @@ def main():
         for b in badges:
             st.markdown(f"- {b}")
 
-    # Reminder
     st.markdown("---")
     st.markdown("### ⏰ Smart Reminders")
     enable = st.checkbox("Enable Reminders", value=False)
@@ -315,7 +307,6 @@ def main():
     else:
         st.warning("Reminders are off. Enable to stay hydrated!")
 
-    # Daily Summary
     st.markdown("---")
     if progress >= 100:
         st.success("💙 Excellent! You've achieved your hydration goal today!")
