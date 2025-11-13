@@ -1,7 +1,7 @@
 import streamlit as st
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
@@ -74,6 +74,11 @@ def save_user(username, goal):
     users[username] = {"goal": goal, "created": datetime.now(timezone.utc).isoformat()}
     atomic_save(users, USERS_FILE)
 
+def update_goal(username, new_goal):
+    if username in users:
+        users[username]["goal"] = new_goal
+        atomic_save(users, USERS_FILE)
+
 def log_intake(username, amount):
     today = datetime.now(timezone.utc).date().isoformat()
     if username not in logs:
@@ -105,13 +110,25 @@ st.title("💧 WaterBuddy – Smart Hydration Tracker")
 
 username = st.text_input("👤 Enter your name:")
 if username:
-    goal = st.number_input("🎯 Set your daily goal (ml):", 100, 10000, 2000)
-    if st.button("💾 Save Goal"):
-        save_user(username, goal)
-        st.success("Goal saved successfully! 💙")
+    # ===== GOAL SECTION =====
+    current_goal = users.get(username, {}).get("goal", 2000)
+    st.subheader("🎯 Daily Water Goal")
+    goal = st.number_input("Set or update your goal (ml):", 100, 10000, current_goal)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Save Goal"):
+            save_user(username, goal)
+            st.success("Goal saved successfully! 💙")
+    with col2:
+        if username in users and st.button("📝 Update Goal"):
+            update_goal(username, goal)
+            st.success(f"Goal updated to {goal} ml! ✅")
 
     if username in users:
         st.subheader(f"Welcome back, {username}! 👋")
+
+        # ===== ADD WATER INTAKE =====
         amount = st.number_input("💦 Enter water intake (ml):", 100, 2000, 250)
         if st.button("➕ Add Intake"):
             log_intake(username, amount)
@@ -127,7 +144,6 @@ if username:
 
         # ===== PROGRESS SECTION =====
         st.subheader("📈 Today's Progress")
-
         today = datetime.now(timezone.utc).date().isoformat()
         total = logs.get(username, {}).get(today, 0)
         goal_value = users[username]["goal"]
@@ -147,7 +163,6 @@ if username:
 
         # ===== HYDRATION HISTORY =====
         st.subheader("📊 Hydration History")
-
         user_logs = logs.get(username, {})
         if user_logs:
             df = pd.DataFrame(list(user_logs.items()), columns=["Date", "Intake (ml)"])
@@ -181,7 +196,7 @@ if username:
         else:
             st.markdown("<p style='color:#555;'>No badges yet. Stay hydrated and earn some! 🌊</p>", unsafe_allow_html=True)
 
-        # ===== REMINDER =====
+        # ===== REMINDER SECTION =====
         st.subheader("🔔 Hydration Reminder")
         remind = st.slider("Remind me every (minutes):", 15, 180, 60)
         if st.button("🚰 Start Reminder"):
@@ -190,6 +205,5 @@ if username:
                 time.sleep(remind * 0.1)
                 send_notification("💧 Time to Drink Water!", "Hydrate yourself and stay fresh!")
             st.success("Reminder test completed ✅")
-
 else:
     st.info("Please enter your name to begin 💧")
