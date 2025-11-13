@@ -1,7 +1,7 @@
 import streamlit as st
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
@@ -74,11 +74,6 @@ def save_user(username, goal):
     users[username] = {"goal": goal, "created": datetime.now(timezone.utc).isoformat()}
     atomic_save(users, USERS_FILE)
 
-def update_goal(username, new_goal):
-    if username in users:
-        users[username]["goal"] = new_goal
-        atomic_save(users, USERS_FILE)
-
 def log_intake(username, amount):
     today = datetime.now(timezone.utc).date().isoformat()
     if username not in logs:
@@ -95,8 +90,8 @@ def award_badge(username, badge):
     user_badges = get_badges(username)
     if badge not in user_badges:
         user_badges.append(badge)
-        badges[username] = user_badges
-        atomic_save(badges, BADGES_FILE)
+    badges[username] = user_badges
+    atomic_save(badges, BADGES_FILE)
 
 def send_notification(title, message):
     if notification:
@@ -109,53 +104,45 @@ def send_notification(title, message):
 st.title("💧 WaterBuddy – Smart Hydration Tracker")
 
 username = st.text_input("👤 Enter your name:")
-if username:
-    # ===== GOAL SECTION =====
-    current_goal = users.get(username, {}).get("goal", 2000)
-    st.subheader("🎯 Daily Water Goal")
-    goal = st.number_input("Set or update your goal (ml):", 100, 10000, current_goal)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💾 Save Goal"):
-            save_user(username, goal)
-            st.success("Goal saved successfully! 💙")
-    with col2:
-        if username in users and st.button("📝 Update Goal"):
-            update_goal(username, goal)
-            st.success(f"Goal updated to {goal} ml! ✅")
+if username:
+    # load existing goal if available
+    current_goal = users.get(username, {}).get("goal", 2000)
+    goal = st.number_input("🎯 Set or Update your daily goal (ml):", 100, 10000, current_goal)
+
+    if st.button("💾 Save / Update Goal"):
+        save_user(username, goal)
+        st.success("Goal saved successfully! 💙")
 
     if username in users:
         st.subheader(f"Welcome back, {username}! 👋")
-
-        # ===== ADD WATER INTAKE =====
         amount = st.number_input("💦 Enter water intake (ml):", 100, 2000, 250)
+
         if st.button("➕ Add Intake"):
             log_intake(username, amount)
             st.success(f"{amount}ml logged successfully! ✅")
 
-            today = datetime.now(timezone.utc).date().isoformat()
-            total = logs.get(username, {}).get(today, 0)
-            if total >= users[username]["goal"]:
-                award_badge(username, "🏅 Goal Achiever")
-                st.balloons()
-                st.success("🎉 You reached your goal today! Awesome work!")
-                send_notification("Hydration Goal Achieved!", "You’ve reached your daily water goal! 💧")
+        today = datetime.now(timezone.utc).date().isoformat()
+        total = logs.get(username, {}).get(today, 0)
+
+        if total >= users[username]["goal"]:
+            award_badge(username, "🏅 Goal Achiever")
+            st.balloons()
+            st.success("🎉 You reached your goal today! Awesome work!")
+            send_notification("Hydration Goal Achieved!", "You’ve reached your daily water goal! 💧")
 
         # ===== PROGRESS SECTION =====
         st.subheader("📈 Today's Progress")
-        today = datetime.now(timezone.utc).date().isoformat()
-        total = logs.get(username, {}).get(today, 0)
         goal_value = users[username]["goal"]
         percent = max(0, min(100, int((total / goal_value) * 100)))
 
-        # Circular Progress
         circle_html = f"""
-        <div style="width:140px; height:140px; border-radius:50%;
-            background: conic-gradient(#0077b6 {percent*3.6}deg, #e0f7fa 0deg);
-            display:flex; align-items:center; justify-content:center; color:#0077b6;
-            font-size:26px; font-weight:700; box-shadow: 0px 0px 10px rgba(0,0,0,0.2);">
-            {percent}%
+        <div style="width:140px; height:140px; border-radius:50%; 
+        background: conic-gradient(#0077b6 {percent*3.6}deg, #e0f7fa 0deg);
+        display:flex; align-items:center; justify-content:center; 
+        color:#0077b6; font-size:26px; font-weight:700;
+        box-shadow: 0px 0px 10px rgba(0,0,0,0.2);">
+        {percent}%
         </div>
         """
         st.markdown(circle_html, unsafe_allow_html=True)
@@ -168,13 +155,11 @@ if username:
             df = pd.DataFrame(list(user_logs.items()), columns=["Date", "Intake (ml)"])
             df["Date"] = pd.to_datetime(df["Date"])
             df.sort_values("Date", inplace=True)
-
             fig, ax = plt.subplots(figsize=(7, 3.5))
             cmap = plt.cm.Blues
             norm = mcolors.Normalize(vmin=min(df["Intake (ml)"]), vmax=max(df["Intake (ml)"]))
             colors = cmap(norm(df["Intake (ml)"].values))
-
-            bars = ax.bar(df["Date"], df["Intake (ml)"], color=colors, edgecolor="#005f73")
+            ax.bar(df["Date"], df["Intake (ml)"], color=colors, edgecolor="#005f73")
             ax.axhline(y=goal_value, color="#ff595e", linestyle="--", linewidth=1.5, label="Goal")
             ax.set_title("💦 Your Daily Water Intake", fontsize=13, color="#023e8a", weight="bold")
             ax.set_xlabel("Date", fontsize=11)
@@ -196,7 +181,7 @@ if username:
         else:
             st.markdown("<p style='color:#555;'>No badges yet. Stay hydrated and earn some! 🌊</p>", unsafe_allow_html=True)
 
-        # ===== REMINDER SECTION =====
+        # ===== REMINDER =====
         st.subheader("🔔 Hydration Reminder")
         remind = st.slider("Remind me every (minutes):", 15, 180, 60)
         if st.button("🚰 Start Reminder"):
