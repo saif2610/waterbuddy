@@ -105,58 +105,26 @@ def send_notification(title, message):
         except Exception:
             pass
 
-# ========= SESSION (Login) =========
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "user" not in st.session_state:
-    st.session_state.user = ""
-
 # ========= APP UI =========
 st.title("💧 WaterBuddy – Smart Hydration Tracker")
 
-# ---- LOGIN PAGE (explicit) ----
-if not st.session_state.logged_in:
-    st.subheader("👤 Login")
-    input_name = st.text_input("Enter your name to login:", key="login_name")
-    login_col1, login_col2 = st.columns([1,1])
-    with login_col1:
-        if st.button("🔐 Login"):
-            if input_name and input_name.strip():
-                st.session_state.logged_in = True
-                st.session_state.user = input_name.strip()
-                # ensure user has an entry with default goal if not present
-                if st.session_state.user not in users:
-                    users[st.session_state.user] = {"goal": 2000, "created": datetime.now(timezone.utc).isoformat()}
-                    atomic_save(users, USERS_FILE)
-                st.experimental_rerun()
-            else:
-                st.warning("Please enter a valid name to login.")
-    with login_col2:
-        if st.button("❌ Continue as Guest"):
-            st.session_state.logged_in = True
-            st.session_state.user = "Guest"
-            if "Guest" not in users:
-                users["Guest"] = {"goal": 2000, "created": datetime.now(timezone.utc).isoformat()}
-                atomic_save(users, USERS_FILE)
-            st.experimental_rerun()
-    st.info("Enter your name and press 🔐 Login to access your WaterBuddy profile.")
-else:
-    username = st.session_state.user
-    # ===== GOAL CUSTOMIZATION (user can update anytime) =====
+username = st.text_input("👤 Enter your name:")
+if username:
+    # Load existing goal if available
     current_goal = users.get(username, {}).get("goal", 2000)
-    st.subheader("🎯 Daily Water Goal")
-    goal = st.number_input("Set or update your goal (ml):", 100, 10000, current_goal)
 
-    if st.button("💾 Save / Update Goal"):
-        # save/update user goal while preserving created timestamp if exists
-        if username in users:
-            users[username]["goal"] = goal
-        else:
-            users[username] = {"goal": goal, "created": datetime.now(timezone.utc).isoformat()}
-        atomic_save(users, USERS_FILE)
-        st.success(f"Goal set to {goal}ml successfully! 💙")
+    goal = st.number_input("🎯 Set or update your daily goal (ml):", 100, 10000, current_goal)
 
-    # ---- Main app content (unchanged behavior) ----
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Save Goal"):
+            save_user(username, goal)
+            st.success(f"Goal saved successfully! 💙 Your goal: {goal}ml")
+    with col2:
+        if st.button("🔁 Update Goal"):
+            update_goal(username, goal)
+            st.success(f"Goal updated to {goal}ml successfully! 💧")
+
     if username in users:
         st.subheader(f"Welcome back, {username}! 👋")
         amount = st.number_input("💦 Enter water intake (ml):", 100, 2000, 250)
@@ -178,7 +146,7 @@ else:
         today = datetime.now(timezone.utc).date().isoformat()
         total = logs.get(username, {}).get(today, 0)
         goal_value = users[username]["goal"]
-        percent = max(0, min(100, int((total / goal_value) * 100))) if goal_value else 0
+        percent = max(0, min(100, int((total / goal_value) * 100)))
 
         # Circular Progress
         circle_html = f"""
@@ -238,8 +206,5 @@ else:
                 send_notification("💧 Time to Drink Water!", "Hydrate yourself and stay fresh!")
             st.success("Reminder test completed ✅")
 
-    # Add a logout button
-    if st.button("🔓 Logout"):
-        st.session_state.logged_in = False
-        st.session_state.user = ""
-        st.experimental_rerun()
+else:
+    st.info("Please enter your name to begin 💧")
