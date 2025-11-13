@@ -1,321 +1,209 @@
 import streamlit as st
 import json
 import os
-from datetime import datetime, timedelta, timezone
-import pandas as pd
+from datetime import datetime, timezone
 import matplotlib.pyplot as plt
-import tempfile
-import random
+import matplotlib.colors as mcolors
+import numpy as np
+import pandas as pd
 import time
 
+# Optional: Desktop notification
 try:
     from plyer import notification
-except Exception:
+except ImportError:
     notification = None
 
+# ========= FILES =========
 USERS_FILE = "users.json"
 LOGS_FILE = "logs.json"
 BADGES_FILE = "badges.json"
 
-st.set_page_config(page_title="💧 Water Buddy", page_icon="💦", layout="centered")
+st.set_page_config(page_title="💧 WaterBuddy", page_icon="💧", layout="wide")
 
-# ---------------- BEAUTIFUL CSS ----------------
+# ========= GLOBAL STYLES =========
 st.markdown("""
 <style>
-html, body, [data-testid="stAppViewContainer"] > section:first-child {
-  height: 100%;
-  background: linear-gradient(135deg, #6dd5ed, #2193b0);
-  background-size: 300% 300%;
-  animation: gradientMove 10s ease infinite;
+body {
+    background: linear-gradient(135deg, #e0f7fa 0%, #e3f2fd 100%);
 }
-@keyframes gradientMove {
-  0% {background-position: 0% 50%;}
-  50% {background-position: 100% 50%;}
-  100% {background-position: 0% 50%;}
-}
-div.stButton > button {
-  border-radius: 12px;
-  padding: 12px 25px;
-  font-weight: 600;
-  background: linear-gradient(90deg, #0072ff, #00c6ff);
-  color: white;
-  border: none;
-  transition: 0.3s;
-}
-div.stButton > button:hover {
-  transform: scale(1.05);
-  filter: brightness(115%);
-}
-[data-testid="stSidebar"] {
-  background: linear-gradient(180deg, #00c6ff 0%, #0072ff 100%);
-  color: white;
+div[data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg, #d7f3ff 0%, #f2fcff 100%);
 }
 h1, h2, h3 {
-  color: #004aad !important;
-  text-shadow: 0px 0px 8px rgba(0, 162, 255, 0.4);
+    color: #0077b6 !important;
+    font-family: 'Poppins', sans-serif;
 }
-hr {
-  border: 1px solid rgba(255,255,255,0.3);
+button, .stButton button {
+    background: linear-gradient(90deg, #0077b6, #00b4d8);
+    color: white !important;
+    border-radius: 12px !important;
+    padding: 0.6em 1em !important;
+    border: none;
+    transition: 0.3s;
+}
+button:hover {
+    background: linear-gradient(90deg, #00b4d8, #0096c7);
+    transform: scale(1.03);
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- UTILITIES ----------------
-def atomic_save(filename, data):
-    s = json.dumps(data, indent=4)
-    dirn = os.path.dirname(os.path.abspath(filename)) or "."
-    fd, tmp_path = tempfile.mkstemp(dir=dirn, prefix=".tmp")
-    with os.fdopen(fd, "w") as f:
-        f.write(s)
-    os.replace(tmp_path, filename)
+# ========= SAFE FILE HANDLING =========
+def atomic_save(data, filename):
+    tmp = filename + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, filename)
 
-def load_data(filename):
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            try:
+def load_json(filename):
+    try:
+        if os.path.exists(filename):
+            with open(filename, "r") as f:
                 return json.load(f)
-            except Exception:
-                return {}
-    return {}
+        return {}
+    except Exception:
+        return {}
 
-def save_data(filename, data):
-    atomic_save(filename, data)
+users = load_json(USERS_FILE)
+logs = load_json(LOGS_FILE)
+badges = load_json(BADGES_FILE)
 
-def hash_password(password):
-    import hashlib
-    return hashlib.sha256(password.encode()).hexdigest()
+# ========= FUNCTIONS =========
+def save_user(username, goal):
+    users[username] = {"goal": goal, "created": datetime.now(timezone.utc).isoformat()}
+    atomic_save(users, USERS_FILE)
 
-def calculate_health_adjustment(conditions):
-    multiplier = 1.0
-    if conditions.get("Heart Issue", False): multiplier += 0.12
-    if conditions.get("Diabetes", False): multiplier += 0.10
-    if conditions.get("Kidney Issue", False): multiplier += 0.15
-    return multiplier
+def update_goal(username, new_goal):
+    if username in users:
+        users[username]["goal"] = new_goal
+        atomic_save(users, USERS_FILE)
 
-def calculate_daily_goal(age, conditions):
-    base = 2000
-    if age < 18: base = 1800
-    elif age > 60: base = 1700
-    return int(base * calculate_health_adjustment(conditions))
+def log_intake(username, amount):
+    today = datetime.now(timezone.utc).date().isoformat()
+    if username not in logs:
+        logs[username] = {}
+    logs[username][today] = logs[username].get(today, 0) + amount
+    atomic_save(logs, LOGS_FILE)
 
-def sign_up(name, email, password, age, profession, health_conditions):
-    users = load_data(USERS_FILE)
-    if email in users:
-        st.error("😕 Email already registered.")
-        return False
-    goal = calculate_daily_goal(age, health_conditions)
-    users[email] = {
-        "name": name,
-        "profession": profession,
-        "password": hash_password(password),
-        "age": age,
-        "health_conditions": health_conditions,
-        "daily_goal": goal,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    save_data(USERS_FILE, users)
-    return True
+def get_badges(username):
+    if username not in badges:
+        badges[username] = []
+    return badges[username]
 
-def sign_in(email, password):
-    users = load_data(USERS_FILE)
-    if email not in users:
-        st.error("😕 Email not registered.")
-        return False
-    if users[email]["password"] != hash_password(password):
-        st.error("😕 Incorrect password.")
-        return False
-    st.session_state.user = email
-    return True
+def award_badge(username, badge):
+    user_badges = get_badges(username)
+    if badge not in user_badges:
+        user_badges.append(badge)
+        badges[username] = user_badges
+        atomic_save(badges, BADGES_FILE)
 
-def get_user_profile(email):
-    return load_data(USERS_FILE).get(email)
-
-def log_water(email, amount_ml):
-    logs = load_data(LOGS_FILE)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    logs.setdefault(email, {}).setdefault(today, 0)
-    logs[email][today] += int(amount_ml)
-    save_data(LOGS_FILE, logs)
-
-def get_today_log(email):
-    logs = load_data(LOGS_FILE)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return logs.get(email, {}).get(today, 0)
-
-def get_logs(email):
-    return load_data(LOGS_FILE).get(email, {})
-
-def award_badge(email, badge_name):
-    badges = load_data(BADGES_FILE)
-    badges.setdefault(email, [])
-    if badge_name not in badges[email]:
-        badges[email].append(badge_name)
-    save_data(BADGES_FILE, badges)
-
-def get_badges(email):
-    return load_data(BADGES_FILE).get(email, [])
-
-def send_reminder():
-    st.toast("💧 Time to drink water!", icon="💧")
+def send_notification(title, message):
     if notification:
         try:
-            notification.notify(title="💧 Water Buddy Reminder", message="Time to hydrate!", timeout=5)
+            notification.notify(title=title, message=message, timeout=5)
         except Exception:
             pass
 
-# ---------------- QUOTES ----------------
-MOTIVATION_QUOTES = [
-    "💪 Keep going! Every sip counts!",
-    "🌿 Hydration = Happiness!",
-    "🚀 You're fueling your body for greatness!",
-    "💙 Drink water, shine brighter!",
-    "🌞 Healthy habits start with hydration!",
-    "✨ Stay cool, stay hydrated!",
-    "🏅 Consistency makes champions!"
-]
+# ========= APP UI =========
+st.title("💧 WaterBuddy – Smart Hydration Tracker")
 
-def get_quote():
-    return random.choice(MOTIVATION_QUOTES)
+username = st.text_input("👤 Enter your name:")
+if username:
+    # ===== GOAL SECTION =====
+    current_goal = users.get(username, {}).get("goal", 2000)
+    st.subheader("🎯 Daily Water Goal")
+    goal = st.number_input("Set or update your goal (ml):", 100, 10000, current_goal)
 
-# ---------------- PLOT ----------------
-def plot_progress_chart(email):
-    logs = get_logs(email)
-    today = datetime.now(timezone.utc).date()
-    dates = [today - timedelta(days=i) for i in range(6, -1, -1)]
-    labels = [d.strftime("%b %d") for d in dates]
-    values = [logs.get(d.strftime("%Y-%m-%d"), 0) for d in dates]
-    user = get_user_profile(email)
-    goal = user.get("daily_goal", 2000)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("💾 Save Goal"):
+            save_user(username, goal)
+            st.success("Goal saved successfully! 💙")
+    with col2:
+        if username in users and st.button("📝 Update Goal"):
+            update_goal(username, goal)
+            st.success(f"Goal updated to {goal} ml! ✅")
 
-    plt.figure(figsize=(8, 4))
-    bars = plt.bar(labels, values, color="#0072ff", alpha=0.85)
-    plt.axhline(goal, color="#00c6ff", linestyle="--", label=f"Goal: {goal} ml")
-    plt.title("💧 Weekly Hydration Progress")
-    plt.ylabel("Water Intake (ml)")
-    plt.legend()
-    for bar, val in zip(bars, values):
-        plt.text(bar.get_x() + bar.get_width()/2, val + 50, f"{val}", ha="center", fontsize=9)
-    st.pyplot(plt)
+    if username in users:
+        st.subheader(f"Welcome back, {username}! 👋")
 
-# ---------------- MAIN ----------------
-def main():
-    st.markdown("<h1 style='text-align:center;'>💧 Water Buddy — Hydration Tracker</h1>", unsafe_allow_html=True)
-    if "user" not in st.session_state:
-        st.session_state.user = None
+        # ===== ADD WATER INTAKE =====
+        amount = st.number_input("💦 Enter water intake (ml):", 100, 2000, 250)
+        if st.button("➕ Add Intake"):
+            log_intake(username, amount)
+            st.success(f"{amount}ml logged successfully! ✅")
 
-    # ----------- LOGIN / SIGN UP -----------
-    if not st.session_state.user:
-        st.markdown("### Stay hydrated and healthy every day 💙")
-        option = st.selectbox("Choose an option:", ["Sign In", "Sign Up"])
-        email = st.text_input("📧 Email")
-        password = st.text_input("🔒 Password", type="password")
+            today = datetime.now(timezone.utc).date().isoformat()
+            total = logs.get(username, {}).get(today, 0)
+            if total >= users[username]["goal"]:
+                award_badge(username, "🏅 Goal Achiever")
+                st.balloons()
+                st.success("🎉 You reached your goal today! Awesome work!")
+                send_notification("Hydration Goal Achieved!", "You’ve reached your daily water goal! 💧")
 
-        if option == "Sign Up":
-            name = st.text_input("👤 Full Name")
-            age = st.number_input("🎂 Age", 1, 120, 25)
-            profession = st.text_input("💼 Profession")
-            st.markdown("### 🩺 Select any health conditions:")
-            health_conditions = {
-                "Heart Issue": st.checkbox("❤️ Heart Issue"),
-                "Diabetes": st.checkbox("🩸 Diabetes"),
-                "Kidney Issue": st.checkbox("🦵 Kidney Issue")
-            }
-            if st.button("Sign Up 💧", use_container_width=True):
-                if not (name and email and password and profession):
-                    st.error("Please fill in all fields.")
-                elif sign_up(name, email, password, age, profession, health_conditions):
-                    st.success("✅ Sign-up successful! Please sign in now.")
+        # ===== PROGRESS SECTION =====
+        st.subheader("📈 Today's Progress")
+        today = datetime.now(timezone.utc).date().isoformat()
+        total = logs.get(username, {}).get(today, 0)
+        goal_value = users[username]["goal"]
+        percent = max(0, min(100, int((total / goal_value) * 100)))
+
+        # Circular Progress
+        circle_html = f"""
+        <div style="width:140px; height:140px; border-radius:50%;
+            background: conic-gradient(#0077b6 {percent*3.6}deg, #e0f7fa 0deg);
+            display:flex; align-items:center; justify-content:center; color:#0077b6;
+            font-size:26px; font-weight:700; box-shadow: 0px 0px 10px rgba(0,0,0,0.2);">
+            {percent}%
+        </div>
+        """
+        st.markdown(circle_html, unsafe_allow_html=True)
+        st.markdown(f"<h4 style='color:#0096c7;'>💧 {total}ml / {goal_value}ml</h4>", unsafe_allow_html=True)
+
+        # ===== HYDRATION HISTORY =====
+        st.subheader("📊 Hydration History")
+        user_logs = logs.get(username, {})
+        if user_logs:
+            df = pd.DataFrame(list(user_logs.items()), columns=["Date", "Intake (ml)"])
+            df["Date"] = pd.to_datetime(df["Date"])
+            df.sort_values("Date", inplace=True)
+
+            fig, ax = plt.subplots(figsize=(7, 3.5))
+            cmap = plt.cm.Blues
+            norm = mcolors.Normalize(vmin=min(df["Intake (ml)"]), vmax=max(df["Intake (ml)"]))
+            colors = cmap(norm(df["Intake (ml)"].values))
+
+            bars = ax.bar(df["Date"], df["Intake (ml)"], color=colors, edgecolor="#005f73")
+            ax.axhline(y=goal_value, color="#ff595e", linestyle="--", linewidth=1.5, label="Goal")
+            ax.set_title("💦 Your Daily Water Intake", fontsize=13, color="#023e8a", weight="bold")
+            ax.set_xlabel("Date", fontsize=11)
+            ax.set_ylabel("Water Intake (ml)", fontsize=11)
+            ax.legend()
+            plt.xticks(rotation=45)
+            st.pyplot(fig)
         else:
-            if st.button("Sign In 💦", use_container_width=True):
-                if email and password and sign_in(email, password):
-                    st.success(f"Welcome back, {get_user_profile(email)['name']}!")
-                    st.rerun()
-        return
+            st.info("No data yet — start logging your water intake to see progress! 💧")
 
-    # ----------- DASHBOARD -----------
-    email = st.session_state.user
-    profile = get_user_profile(email)
-    if not profile:
-        st.error("⚠️ Profile not found. Please sign in again.")
-        st.session_state.user = None
-        return
+        # ===== BADGES SECTION =====
+        st.subheader("🏆 Achievements")
+        user_badges = get_badges(username)
+        if user_badges:
+            cols = st.columns(4)
+            for i, badge in enumerate(user_badges):
+                with cols[i % 4]:
+                    st.markdown(f"<div style='font-size:45px; text-align:center;'>{badge}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<p style='color:#555;'>No badges yet. Stay hydrated and earn some! 🌊</p>", unsafe_allow_html=True)
 
-    st.sidebar.title("👋 Welcome")
-    st.sidebar.markdown(f"**Name:** {profile['name']}")
-    st.sidebar.markdown(f"**Age:** {profile['age']}")
-    st.sidebar.markdown(f"**Profession:** {profile['profession']}")
-    conds = ", ".join([k for k, v in profile["health_conditions"].items() if v]) or "None"
-    st.sidebar.markdown(f"**Health Conditions:** {conds}")
-    if st.sidebar.button("🚪 Sign Out"):
-        st.session_state.user = None
-        st.rerun()
-
-    st.markdown("---")
-
-    daily_goal = profile["daily_goal"]
-    today_total = get_today_log(email)
-    progress = int((today_total / daily_goal) * 100) if daily_goal > 0 else 0
-
-    st.markdown(f"### 💧 Today's Hydration: **{today_total} ml / {daily_goal} ml** ({progress}%)")
-    st.progress(min(progress, 100))
-    st.info(get_quote())
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if st.button("100 ml 💧"):
-            log_water(email, 100)
-            st.balloons()
-            time.sleep(1.5)
-            st.rerun()
-    with c2:
-        if st.button("200 ml 💦"):
-            log_water(email, 200)
-            st.balloons()
-            time.sleep(1.5)
-            st.rerun()
-    with c3:
-        custom = st.number_input("Custom (ml)", 10, 5000, 250)
-        if st.button("Add Custom 🚰"):
-            log_water(email, custom)
-            st.balloons()
-            time.sleep(1.5)
-            st.rerun()
-
-    st.markdown("---")
-    plot_progress_chart(email)
-
-    if progress >= 100:
-        award_badge(email, "🏅 Hydration Hero")
-        st.success("🎉 You earned the Hydration Hero Badge!")
-    badges = get_badges(email)
-    if badges:
-        st.markdown("### 🏅 Your Badges:")
-        for b in badges:
-            st.markdown(f"- {b}")
-
-    st.markdown("---")
-    st.markdown("### ⏰ Smart Reminders")
-    enable = st.checkbox("Enable Reminders", value=False)
-    interval = st.slider("Reminder Frequency (minutes)", 15, 120, 30)
-    if enable:
-        if "next_reminder" not in st.session_state:
-            st.session_state.next_reminder = datetime.now(timezone.utc) + timedelta(minutes=interval)
-        if datetime.now(timezone.utc) >= st.session_state.next_reminder:
-            send_reminder()
-            st.session_state.next_reminder = datetime.now(timezone.utc) + timedelta(minutes=interval)
-        st.info(f"💧 Reminder active! Every {interval} minutes.")
-    else:
-        st.warning("Reminders are off. Enable to stay hydrated!")
-
-    st.markdown("---")
-    if progress >= 100:
-        st.success("💙 Excellent! You've achieved your hydration goal today!")
-    elif progress >= 75:
-        st.info("🌿 Almost there! Just a few more sips!")
-    elif progress >= 50:
-        st.warning("💧 Halfway there! Keep it up!")
-    else:
-        st.error("🥵 Less than 50%. Time to hydrate, champ!")
-
-if __name__ == "__main__":
-    main()
+        # ===== REMINDER SECTION =====
+        st.subheader("🔔 Hydration Reminder")
+        remind = st.slider("Remind me every (minutes):", 15, 180, 60)
+        if st.button("🚰 Start Reminder"):
+            st.info("Reminder active! You’ll get notifications periodically (simulated).")
+            for i in range(3):  # simulate limited reminders
+                time.sleep(remind * 0.1)
+                send_notification("💧 Time to Drink Water!", "Hydrate yourself and stay fresh!")
+            st.success("Reminder test completed ✅")
+else:
+    st.info("Please enter your name to begin 💧")
