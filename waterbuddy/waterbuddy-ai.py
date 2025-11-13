@@ -74,11 +74,6 @@ def save_user(username, goal):
     users[username] = {"goal": goal, "created": datetime.now(timezone.utc).isoformat()}
     atomic_save(users, USERS_FILE)
 
-def update_goal(username, new_goal):
-    if username in users:
-        users[username]["goal"] = new_goal
-        atomic_save(users, USERS_FILE)
-
 def log_intake(username, amount):
     today = datetime.now(timezone.utc).date().isoformat()
     if username not in logs:
@@ -110,20 +105,10 @@ st.title("💧 WaterBuddy – Smart Hydration Tracker")
 
 username = st.text_input("👤 Enter your name:")
 if username:
-    # Load existing goal if available
-    current_goal = users.get(username, {}).get("goal", 2000)
-
-    goal = st.number_input("🎯 Set or update your daily goal (ml):", 100, 10000, current_goal)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("💾 Save Goal"):
-            save_user(username, goal)
-            st.success(f"Goal saved successfully! 💙 Your goal: {goal}ml")
-    with col2:
-        if st.button("🔁 Update Goal"):
-            update_goal(username, goal)
-            st.success(f"Goal updated to {goal}ml successfully! 💧")
+    goal = st.number_input("🎯 Set your daily goal (ml):", 100, 10000, 2000)
+    if st.button("💾 Save Goal"):
+        save_user(username, goal)
+        st.success("Goal saved successfully! 💙")
 
     if username in users:
         st.subheader(f"Welcome back, {username}! 👋")
