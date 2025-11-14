@@ -16,6 +16,9 @@ except Exception:
 USERS_FILE = "users.json"
 LOGS_FILE = "logs.json"
 BADGES_FILE = "badges.json"
+
+st.set_page_config(page_title="💧 Water Buddy", page_icon="💦", layout="centered")
+
 # ---------------- BEAUTIFUL CSS ----------------
 st.markdown("""
 <style>
@@ -170,6 +173,7 @@ MOTIVATION_QUOTES = [
     "✨ Stay cool, stay hydrated!",
     "🏅 Consistency makes champions!"
 ]
+
 def get_quote():
     return random.choice(MOTIVATION_QUOTES)
 
@@ -239,54 +243,91 @@ def main():
 
     st.sidebar.title("👋 Welcome")
     st.sidebar.markdown(f"**Name:** {profile['name']}")
+    st.sidebar.markdown(f"**Age:** {profile['age']}")
+    st.sidebar.markdown(f"**Profession:** {profile['profession']}")
+    conds = ", ".join([k for k, v in profile["health_conditions"].items() if v]) or "None"
+    st.sidebar.markdown(f"**Health Conditions:** {conds}")
+    if st.sidebar.button("🚪 Sign Out"):
+        st.session_state.user = None
+        st.rerun()
 
+    st.markdown("---")
+
+    daily_goal = profile["daily_goal"]
     today_total = get_today_log(email)
-    goal = profile["daily_goal"]
-    progress = min(int((today_total / goal) * 100), 100)
+    progress = int((today_total / daily_goal) * 100) if daily_goal > 0 else 0
 
-    # 🎨 Display mascot according to hydration
-    st.markdown("### 🐉 Your Water Buddy Mood:")
-    if progress < 30:
-        st.image(MASCOT_SAD, caption="I'm so thirsty... 😢", width=250)
-    elif progress < 60:
-        st.image(MASCOT_LITTLE_HAPPY, caption="Yay, some water! 😊", width=250)
-    elif progress < 100:
-        st.image(MASCOT_HAPPY, caption="Feeling great! 💧", width=250)
-    else:
-        st.image(MASCOT_HAPPY, caption="Hydration Hero! 🏅", width=250)
-
-    # 😐 If reminder active but user idle -> stare
-    if "next_reminder" in st.session_state:
-        if datetime.now(timezone.utc) >= st.session_state.next_reminder - timedelta(seconds=10):
-            st.image(MASCOT_STARE, caption="👀 Why no water yet?", width=250)
-
-    # Main progress
-    st.markdown(f"### 💧 Today's Hydration: **{today_total} ml / {goal} ml** ({progress}%)")
-    st.progress(progress)
+    st.markdown(f"### 💧 Today's Hydration: **{today_total} ml / {daily_goal} ml** ({progress}%)")
+    st.progress(min(progress, 100))
     st.info(get_quote())
 
-    # Buttons and chart are same as before
+    # ---- ⚙️ CUSTOM GOAL ----
+    st.markdown("#### ⚙️ Customize Daily Goal")
+    new_goal = st.number_input("Set new daily goal (ml):", 1000, 5000, daily_goal)
+    if st.button("Update Goal 🚀"):
+        users = load_data(USERS_FILE)
+        users[email]["daily_goal"] = new_goal
+        save_data(USERS_FILE, users)
+        st.success(f"✅ Goal updated to {new_goal} ml!")
+        time.sleep(1)
+        st.rerun()
+
     c1, c2, c3 = st.columns(3)
     with c1:
         if st.button("100 ml 💧"):
             log_water(email, 100)
+            st.balloons()
+            time.sleep(1.5)
             st.rerun()
     with c2:
         if st.button("200 ml 💦"):
             log_water(email, 200)
+            st.balloons()
+            time.sleep(1.5)
             st.rerun()
     with c3:
         custom = st.number_input("Custom (ml)", 10, 5000, 250)
         if st.button("Add Custom 🚰"):
             log_water(email, custom)
+            st.balloons()
+            time.sleep(1.5)
             st.rerun()
 
+    st.markdown("---")
     plot_progress_chart(email)
+
+    if progress >= 100:
+        award_badge(email, "🏅 Hydration Hero")
+        st.success("🎉 You earned the Hydration Hero Badge!")
+    badges = get_badges(email)
+    if badges:
+        st.markdown("### 🏅 Your Badges:")
+        for b in badges:
+            st.markdown(f"- {b}")
+
+    st.markdown("---")
+    st.markdown("### ⏰ Smart Reminders")
+    enable = st.checkbox("Enable Reminders", value=False)
+    interval = st.slider("Reminder Frequency (minutes)", 15, 120, 30)
+    if enable:
+        if "next_reminder" not in st.session_state:
+            st.session_state.next_reminder = datetime.now(timezone.utc) + timedelta(minutes=interval)
+        if datetime.now(timezone.utc) >= st.session_state.next_reminder:
+            send_reminder()
+            st.session_state.next_reminder = datetime.now(timezone.utc) + timedelta(minutes=interval)
+        st.info(f"💧 Reminder active! Every {interval} minutes.")
+    else:
+        st.warning("Reminders are off. Enable to stay hydrated!")
+
+    st.markdown("---")
+    if progress >= 100:
+        st.success("💙 Excellent! You've achieved your hydration goal today!")
+    elif progress >= 75:
+        st.info("🌿 Almost there! Just a few more sips!")
+    elif progress >= 50:
+        st.warning("💧 Halfway there! Keep it up!")
+    else:
+        st.error("🥵 Less than 50%. Time to hydrate, champ!")
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
