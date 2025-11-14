@@ -18,7 +18,7 @@ LOGS_FILE = "logs.json"
 BADGES_FILE = "badges.json"
 
 # ---------------- IMAGE PATHS ----------------
-MASCOT_SAD = "C:\Users\Ammi\Downloads\mascot\Water_Dragon_Sad_Slim.jpg"
+MASCOT_SAD = MASCOT_SAD = r"C:\Users\Ammi\Downloads\mascot\Water_Dragon_Sad_Slim.jpg"
 MASCOT_LITTLE_HAPPY = "C:\Users\Ammi\Downloads\mascot\Water_Dragon_Little_Happy_Slim.jpg"
 MASCOT_HAPPY = "C:\Users\Ammi\Downloads\mascot\Water_Dragon_Happy.jpg"
 MASCOT_STARE = "C:\Users\Ammi\Downloads\mascot\Water_Dragon_Angry_Cute_Stare.jpg"
@@ -293,4 +293,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
