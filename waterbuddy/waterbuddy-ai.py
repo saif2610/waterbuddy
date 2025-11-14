@@ -16,14 +16,6 @@ except Exception:
 USERS_FILE = "users.json"
 LOGS_FILE = "logs.json"
 BADGES_FILE = "badges.json"
-
-# ---------------- IMAGE PATHS ----------------
-MASCOT_SAD = "Water_Dragon_Sad_Slim.jpg"
-MASCOT_LITTLE_HAPPY = "Water_Dragon_Little_Happy_Slim.jpg"
-MASCOT_HAPPY = "Water_Dragon_Happy.jpg"
-MASCOT_STARE = "Water_Dragon_Angry_Cute_Stare.jpg"
-st.set_page_config(page_title="💧 Water Buddy", page_icon="💦", layout="centered")
-
 # ---------------- BEAUTIFUL CSS ----------------
 st.markdown("""
 <style>
@@ -293,6 +285,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
